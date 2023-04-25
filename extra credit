@@ -1,0 +1,149 @@
+/*
+Gabriel Rechdan
+Neslisah Torosdagli
+Extra Credit Assignment
+4/24/23
+*/
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#define cacheSize 32
+#define blockSize 4
+
+typedef struct cache { 
+    int **tag;  
+    int **valid;     
+    int *lru; 
+    int setsAmt;   
+    int blocks; 
+    int replace; 
+    int space;   
+    int assoc;  
+    int hit;    
+    int miss;
+    char **data;
+} Cache;
+
+int main() {
+    Cache cache;
+    char hex[9];
+    int addr;
+    int i;
+    cache.space = cacheSize;
+    cache.blocks = blockSize;
+    init_cache(&cache, 1, 0);
+
+    FILE *fp;
+    fp = fopen("traces.txt", "r");
+    if (fp == NULL) {
+        printf("Error opening file.\n");
+        return 1;
+    }
+
+    for (i = 0; i < 16; i++) {
+        scanf("%s", hex);
+        addr = hextoInt(hex);
+        access_cache(&cache, addr);
+    }
+
+    fclose(fp);
+
+    printf("Miss: %d\n", cache.miss);
+    printf("Hit: %d\n", cache.hit);
+
+    return 0;
+}
+
+void access_cache(Cache *cache, int addr) {
+    int set_index = (addr / cache->blocks) % cache->setsAmt;
+    int tag = (addr / cache->blocks) / cache->setsAmt;
+    int i, j, lruI, random_index;
+    int found = 0;
+    
+    for (i = 0; i < cache->assoc; i++) {
+        if (cache->valid[set_index][i] && cache->tag[set_index][i] == tag) {
+            cache->hit++;
+            if (cache->replace == 0) {
+                cache->lru[set_index] = i;
+            }
+            found = 1;
+            break;
+        }
+    }
+
+    if (!found) {
+        cache->miss++;
+        if (cache->replace == 0) {
+            lruI = cache->lru[set_index];
+            for (i = 0; i < cache->assoc; i++) {
+                if (!cache->valid[set_index][i]) {
+                    lruI = i;
+                    break;
+                }
+                if (cache->lru[set_index] > cache->lru[set_index + i]) {
+                    lruI = i;
+                }
+            }
+            cache->lru[set_index] = cache->lru[set_index] + 1;
+            if (lruI == cache->assoc) {
+                lruI = 0;
+                cache->lru[set_index] = 0;
+            }
+            cache->tag[set_index][lruI] = tag;
+            cache->valid[set_index][lruI] = 1;
+            memcpy(&cache->data[set_index][lruI * cache->blocks], &addr, cache->blocks * sizeof(char));
+        } else {
+            random_index = rand() % cache->assoc;
+            cache->tag[set_index][random_index] = tag;
+            cache->valid[set_index][random_index] = 1;
+            memcpy(&cache->data[set_index][random_index * cache->blocks], &addr, cache->blocks * sizeof(char));
+        }
+    }
+}
+
+int hextoInt(char *hex) {
+    int result = 0;
+    int len = strlen(hex);
+    int i;
+    for (i = 0; i < len; i++) {
+        char c = hex[i];
+        int digit;
+        if (c >= '0' && c <= '9') {
+            digit = c - '0';
+        } else if (c >= 'a' && c <= 'f') {
+            digit = c - 'a' + 10;
+        } else if (c >= 'A' && c <= 'F') {
+            digit = c - 'A' + 10;
+        } else {
+            return -1;
+        }
+        result = result * 16 + digit;
+    }
+    return result;
+}
+
+void init_cache(Cache *cache, int assoc, int replace) {
+    int i, j;
+    cache->assoc = assoc;
+    cache->setsAmt = cache->space / (assoc * cache->blocks);
+    cache->replace = replace;
+    cache->hit = 0;
+    cache->miss = 0;
+    cache->tag = (int **) calloc(cache->setsAmt, sizeof(int *));
+    cache->valid = (int **) calloc(cache->setsAmt, sizeof(int *));
+    cache->data = (char **) calloc(cache->setsAmt, sizeof(char *));
+    if (replace == 0) {
+        cache->lru = (int *) calloc(cache->setsAmt, sizeof(int));
+    }
+    for (i = 0; i < cache->setsAmt; i++) {
+        cache->tag[i] = (int *) calloc(assoc, sizeof(int));
+        cache->valid[i] = (int *) calloc(assoc, sizeof(int));
+        cache->data[i] = (char *) calloc(cache->blocks * assoc, sizeof(char));
+    }
+    if (replace == 0) {
+        for (i = 0; i < cache->setsAmt; i++) {
+            memset(cache->lru, 0, cache->setsAmt * sizeof(int));
+        }
+    }
+}
